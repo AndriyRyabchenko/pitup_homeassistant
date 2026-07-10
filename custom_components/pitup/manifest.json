@@ -1,0 +1,11 @@
+{
+  "domain": "pitup",
+  "name": "PitUp",
+  "codeowners": ["@AndriyRyabchenko"],
+  "config_flow": true,
+  "documentation": "https://github.com/AndriyRyabchenko/pitup_homeassistant",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/AndriyRyabchenko/pitup_homeassistant/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

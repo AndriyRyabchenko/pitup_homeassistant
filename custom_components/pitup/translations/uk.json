@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "PitUp",
+        "description": "Введіть адресу та API-токен із кабінету PitUp (Налаштування → Home Assistant → Згенерувати токен).",
+        "data": {
+          "base_url": "Адреса PitUp",
+          "token": "API-токен"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Недійсний токен PitUp.",
+      "cannot_connect": "Не вдалося з'єднатися з PitUp."
+    },
+    "abort": {
+      "already_configured": "Цей акаунт уже налаштовано."
+    }
+  }
+}

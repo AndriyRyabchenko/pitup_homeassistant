@@ -1,0 +1,12 @@
+type: markdown
+title: PitUp — техніка
+content: |
+  {% set vs = state_attr('sensor.pitup','vehicles') or [] %}
+  {% if not vs %}Немає даних (перевір токен інтеграції PitUp).{% endif %}
+  {% for v in vs %}
+  {% set dot = '🔴' if v.status=='overdue' else ('🟡' if v.status=='soon' else '🟢') %}
+  ### {{ dot }} {{ v.title }}
+  Пробіг: **{{ v.mileage }} {{ v.unit }}**{% if v.mileage_estimated %} (≈){% endif %}{% if v.overdue %} · прострочено: {{ v.overdue }}{% endif %}{% if v.soon %} · скоро: {{ v.soon }}{% endif %}
+  {% if v.next %}Найближче: **{{ v.next.name }}** — {% if v.next.status == 'overdue' %}⚠️ прострочено{% if v.next.over_km %} на {{ v.next.over_km }} {{ v.unit }}{% endif %}{% else %}{% if v.next.due_km is not none %}через {{ v.next.due_km }} {{ v.unit }}{% endif %}{% if v.next.next_date %} (до {{ v.next.next_date }}){% endif %}{% endif %}{% endif %}
+
+  {% endfor %}
