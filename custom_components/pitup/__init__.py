@@ -4,17 +4,25 @@ from __future__ import annotations
 import logging
 import os
 
+import voluptuous as vol
 from homeassistant.components import frontend, panel_custom
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 
-from .const import CONF_BASE_URL, CONF_TOKEN, DOMAIN
+from .const import CONF_BASE_URL, CONF_TOKEN, DOMAIN, SERVICE_SET_COUNTER
 from .coordinator import PitUpCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.NUMBER]
+
+SET_COUNTER_SCHEMA = vol.Schema(
+    {
+        vol.Required("vehicle_id"): vol.Coerce(int),
+        vol.Required("value"): vol.Coerce(float),
+    }
+)
 
 FRONTEND_PATH = "/pitup_static"
 CARD_URL = f"{FRONTEND_PATH}/pitup.js"
@@ -59,6 +67,27 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     data["_frontend"] = True
 
 
+def _register_services(hass: HomeAssistant) -> None:
+    """Реєструє сервіс pitup.set_counter (один раз на весь домен)."""
+    if hass.services.has_service(DOMAIN, SERVICE_SET_COUNTER):
+        return
+
+    async def _handle_set_counter(call: ServiceCall) -> None:
+        vehicle_id = int(call.data["vehicle_id"])
+        value = int(round(call.data["value"]))
+        for key, coord in hass.data.get(DOMAIN, {}).items():
+            if key == "_frontend" or not isinstance(coord, PitUpCoordinator):
+                continue
+            if any(v.get("id") == vehicle_id for v in (coord.data or {}).get("vehicles", [])):
+                await coord.async_set_counter(vehicle_id, value)
+                return
+        _LOGGER.warning("PitUp: техніку id=%s не знайдено для set_counter", vehicle_id)
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_COUNTER, _handle_set_counter, schema=SET_COUNTER_SCHEMA
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = PitUpCoordinator(
         hass, entry.data[CONF_BASE_URL], entry.data[CONF_TOKEN]
@@ -66,6 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await _async_register_frontend(hass)
+    _register_services(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

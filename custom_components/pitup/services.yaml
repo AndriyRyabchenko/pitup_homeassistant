@@ -1,0 +1,20 @@
+set_counter:
+  name: Встановити лічильник
+  description: Записати пробіг або мотогодини техніки в PitUp (не зменшується).
+  fields:
+    vehicle_id:
+      name: ID техніки
+      description: ID у PitUp (див. URL /garage/<id>/ або атрибут vehicle_id number-сутності).
+      required: true
+      selector:
+        number:
+          mode: box
+          min: 1
+    value:
+      name: Значення
+      description: Нове показання (км або мотогодини).
+      required: true
+      selector:
+        number:
+          mode: box
+          min: 0

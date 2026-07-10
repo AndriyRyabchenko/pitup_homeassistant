@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DEFAULT_SCAN_INTERVAL, SUMMARY_PATH
+from .const import DEFAULT_SCAN_INTERVAL, ODOMETER_PATH, SUMMARY_PATH
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,3 +42,15 @@ class PitUpCoordinator(DataUpdateCoordinator):
                 return await resp.json()
         except aiohttp.ClientError as err:
             raise UpdateFailed(f"Помилка зв'язку з PitUp: {err}") from err
+
+    async def async_set_counter(self, vehicle_id: int, value: int) -> None:
+        """Записує лічильник (пробіг/мотогодини) техніки в PitUp і оновлює дані."""
+        url = f"{self.base_url}{ODOMETER_PATH}"
+        async with self._session.post(
+            url,
+            headers={"X-Api-Token": self.token},
+            json={"vehicle_id": int(vehicle_id), "value": int(value)},
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as resp:
+            resp.raise_for_status()
+        await self.async_request_refresh()
