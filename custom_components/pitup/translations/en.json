@@ -3,9 +3,8 @@
     "step": {
       "user": {
         "title": "PitUp",
-        "description": "Enter the address and API token from your PitUp account (Settings → Home Assistant → Generate token).",
+        "description": "Open PitUp → Settings → Home Assistant → “Generate token” and paste the token here.",
         "data": {
-          "base_url": "PitUp address",
           "token": "API token"
         }
       }
@@ -15,7 +14,7 @@
       "cannot_connect": "Could not connect to PitUp."
     },
     "abort": {
-      "already_configured": "This account is already configured."
+      "already_configured": "This token is already added."
     }
   }
 }
