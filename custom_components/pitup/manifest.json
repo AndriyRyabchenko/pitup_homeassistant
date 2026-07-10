@@ -3,6 +3,7 @@
   "name": "PitUp",
   "codeowners": ["@AndriyRyabchenko"],
   "config_flow": true,
+  "dependencies": ["frontend", "http", "panel_custom"],
   "documentation": "https://github.com/AndriyRyabchenko/pitup_homeassistant",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/AndriyRyabchenko/pitup_homeassistant/issues",
