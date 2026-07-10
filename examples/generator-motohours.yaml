@@ -1,61 +1,58 @@
 # Мотогодини генератора → PitUp
 # ---------------------------------------------------------------------------
-# Устав цей блок у configuration.yaml.
-#   • Якщо секції `homeassistant:` ще НЕМАЄ — додай увесь блок як є.
-#   • Якщо `homeassistant:` вже Є — додай під неї лише `packages:` з `pitup_generator:`
-#     (НЕ дублюй ключ `homeassistant:` — YAML цього не дозволяє).
+# Це ФАЙЛ-ПАКЕТ для теки, підключеної так:
+#     homeassistant:
+#       packages: !include_dir_merge_named includes/packages
+#
+# Поклади цей файл у includes/packages/ (напр. pitup_generator.yaml).
+# Верхній ключ `pitup_generator:` — це ІМʼЯ пакета (не додавай `homeassistant:`/`packages:`).
 #
 # Заміни:
 #   • binary_sensor.deye_generator — на свій сенсор (on = генератор працює);
 #   • VEHICLE_ID — на id генератора в PitUp (див. URL /garage/<id>/).
-#
-# Помилка «expected a dictionary / Integration not found» означає, що блок вставлено
-# БЕЗ обгортки `pitup_generator:` — усе має бути під одним іменем пакета.
 
-homeassistant:
-  packages:
-    pitup_generator:
+pitup_generator:
 
-      template:
-        - sensor:
-            - name: generator_running
-              unique_id: generator_running_bit
-              # 1 коли генератор працює, інакше 0
-              state: "{{ 1 if is_state('binary_sensor.deye_generator','on') else 0 }}"
+  template:
+    - sensor:
+        - name: generator_running
+          unique_id: generator_running_bit
+          # 1 коли генератор працює, інакше 0
+          state: "{{ 1 if is_state('binary_sensor.deye_generator','on') else 0 }}"
 
-      sensor:
-        # Інтеграл 0/1 за часом у годинах = мотогодини (лише зростає, переживає рестарт)
-        - platform: integration
-          name: generator_motohours
-          unique_id: generator_motohours
-          source: sensor.generator_running
-          unit_time: h
-          method: left
-          round: 2
+  sensor:
+    # Інтеграл 0/1 за часом у годинах = мотогодини (лише зростає, переживає рестарт)
+    - platform: integration
+      name: generator_motohours
+      unique_id: generator_motohours
+      source: sensor.generator_running
+      unit_time: h
+      method: left
+      round: 2
 
-      input_number:
-        # Одноразово: реальні мотогодини генератора «на момент старту підрахунку»
-        generator_hours_offset:
-          name: Генератор — базові мотогодини
-          min: 0
-          max: 1000000
-          step: 1
-          mode: box
+  input_number:
+    # Одноразово: реальні мотогодини генератора «на момент старту підрахунку»
+    generator_hours_offset:
+      name: Генератор — базові мотогодини
+      min: 0
+      max: 1000000
+      step: 1
+      mode: box
 
-      automation:
-        - alias: PitUp — записати мотогодини генератора
-          trigger:
-            - platform: state
-              entity_id: sensor.generator_motohours
-            - platform: time_pattern
-              minutes: "/15"
-          condition:
-            - condition: template
-              value_template: "{{ states('sensor.generator_motohours') not in ['unknown','unavailable'] }}"
-          action:
-            - service: pitup.set_counter
-              data:
-                vehicle_id: VEHICLE_ID   # id генератора в PitUp (URL /garage/<id>/)
-                value: >
-                  {{ (states('input_number.generator_hours_offset') | float(0))
-                     + (states('sensor.generator_motohours') | float(0)) }}
+  automation:
+    - alias: PitUp — записати мотогодини генератора
+      trigger:
+        - platform: state
+          entity_id: sensor.generator_motohours
+        - platform: time_pattern
+          minutes: "/15"
+      condition:
+        - condition: template
+          value_template: "{{ states('sensor.generator_motohours') not in ['unknown','unavailable'] }}"
+      action:
+        - service: pitup.set_counter
+          data:
+            vehicle_id: VEHICLE_ID   # id генератора в PitUp (URL /garage/<id>/)
+            value: >
+              {{ (states('input_number.generator_hours_offset') | float(0))
+                 + (states('sensor.generator_motohours') | float(0)) }}
