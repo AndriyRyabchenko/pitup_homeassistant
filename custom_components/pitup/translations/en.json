@@ -16,5 +16,16 @@
     "abort": {
       "already_configured": "This token is already added."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "PitUp notifications",
+        "description": "Native Home Assistant app pushes for new due/overdue items (maintenance and insurance). Enter your notify service, e.g. mobile_app_your_phone. Empty = disabled.",
+        "data": {
+          "notify_service": "Notify service"
+        }
+      }
+    }
   }
 }

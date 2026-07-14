@@ -16,5 +16,16 @@
     "abort": {
       "already_configured": "Цей токен уже додано."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Сповіщення PitUp",
+        "description": "Нативні пуші в застосунку Home Assistant про нові «скоро/прострочено» (ТО та страховки). Вкажи свій notify-сервіс, напр. mobile_app_твій_телефон. Порожньо — вимкнено.",
+        "data": {
+          "notify_service": "Notify-сервіс"
+        }
+      }
+    }
   }
 }

@@ -10,7 +10,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import CoreState, HomeAssistant, ServiceCall
 
-from .const import CONF_BASE_URL, CONF_TOKEN, DOMAIN, SERVICE_SET_COUNTER
+from .const import (
+    CONF_BASE_URL,
+    CONF_NOTIFY_SERVICE,
+    CONF_TOKEN,
+    DOMAIN,
+    SERVICE_SET_COUNTER,
+)
 from .coordinator import PitUpCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -132,12 +138,18 @@ def _register_services(hass: HomeAssistant) -> None:
     )
 
 
+async def _options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = PitUpCoordinator(
         hass, entry.data[CONF_BASE_URL], entry.data[CONF_TOKEN]
     )
+    coordinator.notify_service = entry.options.get(CONF_NOTIFY_SERVICE, "")
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.async_on_unload(entry.add_update_listener(_options_updated))
     await _async_register_frontend(hass)
     _register_services(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
