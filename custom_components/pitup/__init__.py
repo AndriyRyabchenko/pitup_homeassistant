@@ -25,7 +25,11 @@ SET_COUNTER_SCHEMA = vol.Schema(
 )
 
 FRONTEND_PATH = "/pitup_static"
-CARD_URL = f"{FRONTEND_PATH}/pitup.js"
+CARD_JS = f"{FRONTEND_PATH}/pitup.js"
+# Cache-bust: браузер/HA кешують JS за URL, тож при кожній версії міняємо ?v=…
+# (тримати синхронно з manifest.json version).
+_JS_VERSION = "0.7.1"
+CARD_URL = f"{CARD_JS}?v={_JS_VERSION}"
 PANEL_PATH = "pitup"
 
 
@@ -95,7 +99,11 @@ async def _register_lovelace_resource(hass: HomeAssistant) -> None:
         except Exception:  # noqa: BLE001
             pass
         items = list(resources.async_items()) if hasattr(resources, "async_items") else []
-        if any((i.get("url") or "").split("?")[0] == CARD_URL for i in items):
+        existing = next((i for i in items if (i.get("url") or "").split("?")[0] == CARD_JS), None)
+        if existing:
+            if existing.get("url") != CARD_URL and hasattr(resources, "async_update_item"):
+                await resources.async_update_item(existing["id"], {"res_type": "module", "url": CARD_URL})
+                _LOGGER.info("PitUp: Lovelace-ресурс оновлено → %s", CARD_URL)
             return
         await resources.async_create_item({"res_type": "module", "url": CARD_URL})
         _LOGGER.info("PitUp: Lovelace-ресурс %s зареєстровано", CARD_URL)
