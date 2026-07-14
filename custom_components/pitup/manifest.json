@@ -1,6 +1,7 @@
 {
   "domain": "pitup",
   "name": "PitUp",
+  "after_dependencies": ["lovelace"],
   "codeowners": ["@AndriyRyabchenko"],
   "config_flow": true,
   "dependencies": ["frontend", "http", "panel_custom"],
