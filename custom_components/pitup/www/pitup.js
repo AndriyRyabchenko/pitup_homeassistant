@@ -69,7 +69,7 @@ class PitUpCard extends HTMLElement {
     return 3;
   }
 }
-customElements.define("pitup-card", PitUpCard);
+if (!customElements.get("pitup-card")) customElements.define("pitup-card", PitUpCard);
 
 class PitUpPanel extends HTMLElement {
   set hass(hass) {
@@ -94,7 +94,7 @@ class PitUpPanel extends HTMLElement {
     this._body.innerHTML = pitupRender(this._hass);
   }
 }
-customElements.define("pitup-panel", PitUpPanel);
+if (!customElements.get("pitup-panel")) customElements.define("pitup-panel", PitUpPanel);
 
 window.customCards = window.customCards || [];
 window.customCards.push({

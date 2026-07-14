@@ -47,6 +47,8 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
 
     # Авто-підключення JS: картка з’являється у списку «Додати картку».
     frontend.add_extra_js_url(hass, CARD_URL)
+    # + як Lovelace-ресурс, щоб дашборд чекав завантаження (без «Custom element doesn't exist»).
+    await _register_lovelace_resource(hass)
 
     # Панель «PitUp» у бічному меню (готовий інформер без налаштування).
     try:
@@ -65,6 +67,36 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         _LOGGER.debug("PitUp panel not registered: %s", err)
 
     data["_frontend"] = True
+
+
+async def _register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Додає картку як Lovelace-ресурс (module), щоб дашборд не рендерив її до завантаження."""
+    try:
+        from homeassistant.components.lovelace import DOMAIN as LL_DOMAIN
+
+        data = hass.data.get(LL_DOMAIN)
+        resources = getattr(data, "resources", None)
+        if resources is None and isinstance(data, dict):
+            resources = data.get("resources")
+        if resources is None:
+            return  # немає доступу (напр. рання ініціалізація)
+        # Ресурси можна додавати лише в storage-режимі дашбордів.
+        if getattr(resources, "async_create_item", None) is None:
+            return
+        if hasattr(resources, "async_get_info"):
+            await resources.async_get_info()
+        elif hasattr(resources, "loaded") and not resources.loaded:
+            await resources.async_load()
+            resources.loaded = True
+        if any(
+            (item.get("url") or "").split("?")[0] == CARD_URL
+            for item in resources.async_items()
+        ):
+            return
+        await resources.async_create_item({"res_type": "module", "url": CARD_URL})
+        _LOGGER.debug("PitUp: Lovelace-ресурс %s додано", CARD_URL)
+    except Exception as err:  # yaml-режим / несумісна версія — не критично
+        _LOGGER.debug("PitUp: Lovelace-ресурс не додано: %s", err)
 
 
 def _register_services(hass: HomeAssistant) -> None:
