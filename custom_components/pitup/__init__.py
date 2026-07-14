@@ -7,8 +7,8 @@ import os
 import voluptuous as vol
 from homeassistant.components import frontend, panel_custom
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
+from homeassistant.core import CoreState, HomeAssistant, ServiceCall
 
 from .const import CONF_BASE_URL, CONF_TOKEN, DOMAIN, SERVICE_SET_COUNTER
 from .coordinator import PitUpCoordinator
@@ -48,7 +48,14 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     # Авто-підключення JS: картка з’являється у списку «Додати картку».
     frontend.add_extra_js_url(hass, CARD_URL)
     # + як Lovelace-ресурс, щоб дашборд чекав завантаження (без «Custom element doesn't exist»).
-    await _register_lovelace_resource(hass)
+    # Робимо після повного запуску HA — тоді lovelace та його ресурси вже готові.
+    if hass.state == CoreState.running:
+        await _register_lovelace_resource(hass)
+    else:
+        hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STARTED,
+            lambda _e: hass.async_create_task(_register_lovelace_resource(hass)),
+        )
 
     # Панель «PitUp» у бічному меню (готовий інформер без налаштування).
     try:
@@ -72,31 +79,28 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
 async def _register_lovelace_resource(hass: HomeAssistant) -> None:
     """Додає картку як Lovelace-ресурс (module), щоб дашборд не рендерив її до завантаження."""
     try:
-        from homeassistant.components.lovelace import DOMAIN as LL_DOMAIN
-
-        data = hass.data.get(LL_DOMAIN)
+        data = hass.data.get("lovelace")
         resources = getattr(data, "resources", None)
         if resources is None and isinstance(data, dict):
             resources = data.get("resources")
-        if resources is None:
-            return  # немає доступу (напр. рання ініціалізація)
-        # Ресурси можна додавати лише в storage-режимі дашбордів.
-        if getattr(resources, "async_create_item", None) is None:
+        if resources is None or getattr(resources, "async_create_item", None) is None:
+            _LOGGER.warning("PitUp: Lovelace resources недоступні (yaml-режим?) — картку треба додати вручну як ресурс %s", CARD_URL)
             return
-        if hasattr(resources, "async_get_info"):
-            await resources.async_get_info()
-        elif hasattr(resources, "loaded") and not resources.loaded:
-            await resources.async_load()
-            resources.loaded = True
-        if any(
-            (item.get("url") or "").split("?")[0] == CARD_URL
-            for item in resources.async_items()
-        ):
+        try:  # переконатись, що сховище завантажене
+            if hasattr(resources, "async_get_info"):
+                await resources.async_get_info()
+            elif hasattr(resources, "async_load") and not getattr(resources, "loaded", False):
+                await resources.async_load()
+                resources.loaded = True
+        except Exception:  # noqa: BLE001
+            pass
+        items = list(resources.async_items()) if hasattr(resources, "async_items") else []
+        if any((i.get("url") or "").split("?")[0] == CARD_URL for i in items):
             return
         await resources.async_create_item({"res_type": "module", "url": CARD_URL})
-        _LOGGER.debug("PitUp: Lovelace-ресурс %s додано", CARD_URL)
-    except Exception as err:  # yaml-режим / несумісна версія — не критично
-        _LOGGER.debug("PitUp: Lovelace-ресурс не додано: %s", err)
+        _LOGGER.info("PitUp: Lovelace-ресурс %s зареєстровано", CARD_URL)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("PitUp: Lovelace-ресурс не додано (%s) — додай вручну: %s", err, CARD_URL)
 
 
 def _register_services(hass: HomeAssistant) -> None:
