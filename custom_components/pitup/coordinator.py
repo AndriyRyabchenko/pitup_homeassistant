@@ -49,7 +49,7 @@ class PitUpCoordinator(DataUpdateCoordinator):
         async with self._session.post(
             url,
             headers={"X-Api-Token": self.token},
-            json={"vehicle_id": int(vehicle_id), "value": int(value)},
+            json={"vehicle_id": int(vehicle_id), "value": float(value)},
             timeout=aiohttp.ClientTimeout(total=20),
         ) as resp:
             resp.raise_for_status()

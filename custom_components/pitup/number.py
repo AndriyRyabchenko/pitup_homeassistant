@@ -32,7 +32,7 @@ class PitUpCounterNumber(CoordinatorEntity[PitUpCoordinator], NumberEntity):
     _attr_icon = "mdi:counter"
     _attr_native_min_value = 0
     _attr_native_max_value = 100000000
-    _attr_native_step = 1
+    _attr_native_step = 0.01
 
     def __init__(
         self, coordinator: PitUpCoordinator, entry: ConfigEntry, vehicle_id: int
@@ -60,4 +60,4 @@ class PitUpCounterNumber(CoordinatorEntity[PitUpCoordinator], NumberEntity):
         return {"vehicle_id": self._vehicle_id}
 
     async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.async_set_counter(self._vehicle_id, int(round(value)))
+        await self.coordinator.async_set_counter(self._vehicle_id, round(float(value), 2))

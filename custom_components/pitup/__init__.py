@@ -74,7 +74,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def _handle_set_counter(call: ServiceCall) -> None:
         vehicle_id = int(call.data["vehicle_id"])
-        value = int(round(call.data["value"]))
+        value = round(float(call.data["value"]), 2)
         for key, coord in hass.data.get(DOMAIN, {}).items():
             if key == "_frontend" or not isinstance(coord, PitUpCoordinator):
                 continue
