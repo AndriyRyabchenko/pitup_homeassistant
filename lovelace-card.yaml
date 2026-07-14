@@ -1,12 +1,31 @@
+# PitUp — картка для дашборда (Markdown, нативна).
+# Рекомендований формат: без «Custom element not found» на холодному кеші.
+# Додай: дашборд → Додати картку → Ручна (Manual) → встав цей YAML.
 type: markdown
 title: PitUp — техніка
 content: |
-  {% set vs = state_attr('sensor.pitup','vehicles') or [] %}
-  {% if not vs %}Немає даних (перевір токен інтеграції PitUp).{% endif %}
-  {% for v in vs %}
-  {% set dot = '🔴' if v.status=='overdue' else ('🟡' if v.status=='soon' else '🟢') %}
-  ### {{ dot }} {{ v.title }}
-  Пробіг: **{{ v.mileage }} {{ v.unit }}**{% if v.mileage_estimated %} (≈){% endif %}{% if v.overdue %} · прострочено: {{ v.overdue }}{% endif %}{% if v.soon %} · скоро: {{ v.soon }}{% endif %}
-  {% if v.next %}Найближче: **{{ v.next.name }}** — {% if v.next.status == 'overdue' %}⚠️ прострочено{% if v.next.over_km %} на {{ v.next.over_km }} {{ v.unit }}{% endif %}{% else %}{% if v.next.due_km is not none %}через {{ v.next.due_km }} {{ v.unit }}{% endif %}{% if v.next.next_date %} (до {{ v.next.next_date }}){% endif %}{% endif %}{% endif %}
-
-  {% endfor %}
+  {%- set vs = state_attr('sensor.pitup','vehicles') or [] -%}
+  {%- set t = state_attr('sensor.pitup','totals') or {} -%}
+  {%- set ns = namespace(rows=[]) -%}
+  {%- for v in vs -%}
+    {%- set dot = '🔴' if v.status == 'overdue' else ('🟡' if v.status == 'soon' else '🟢') -%}
+    {%- set veh = '**' ~ v.title ~ '**<br>`' ~ v.mileage ~ ' ' ~ v.unit ~ '`' ~ (' ≈' if v.mileage_estimated else '') -%}
+    {%- if v.next -%}
+      {%- if v.next.status == 'overdue' -%}
+        {%- set nx = v.next.name ~ '<br>⚠️ прострочено' ~ (' +' ~ v.next.over_km ~ ' ' ~ v.unit if v.next.over_km else '') -%}
+      {%- else -%}
+        {%- set parts = [] -%}
+        {%- if v.next.due_km is not none -%}{%- set parts = parts + ['через ' ~ v.next.due_km ~ ' ' ~ v.unit] -%}{%- endif -%}
+        {%- if v.next.next_date -%}{%- set parts = parts + [v.next.next_date] -%}{%- endif -%}
+        {%- set nx = v.next.name ~ '<br>' ~ (parts | join(' · ')) -%}
+      {%- endif -%}
+    {%- else -%}
+      {%- set nx = '—' -%}
+    {%- endif -%}
+    {%- set ns.rows = ns.rows + ['| ' ~ dot ~ ' | ' ~ veh ~ ' | ' ~ nx ~ ' |'] -%}
+  {%- endfor -%}
+  {% if t.overdue or t.soon %}{% if t.overdue %}🔴 **{{ t.overdue }}** протерміновано{% endif %}{% if t.soon %}{% if t.overdue %} &nbsp;·&nbsp; {% endif %}🟡 **{{ t.soon }}** скоро{% endif %}
+  {% endif %}
+  |  | Техніка | Найближче ТО |
+  |:--:|:--|:--|
+  {{ ns.rows | join('\n') }}
