@@ -10,6 +10,10 @@ content: |
   {%- for v in vs -%}
     {%- set dot = '🔴' if v.status == 'overdue' else ('🟡' if v.status == 'soon' else '🟢') -%}
     {%- set veh = '**' ~ v.title ~ '**<br>`' ~ v.mileage ~ ' ' ~ v.unit ~ '`' ~ (' ≈' if v.mileage_estimated else '') -%}
+    {%- if v.policy -%}
+      {%- set pnote = 'прострочено' if v.policy.status == 'overdue' else ('спливає, ' ~ v.policy.days_left ~ ' дн') -%}
+      {%- set veh = veh ~ '<br>🛡️ ' ~ v.policy.kind ~ ' — ' ~ pnote -%}
+    {%- endif -%}
     {%- if v.next -%}
       {%- if v.next.status == 'overdue' -%}
         {%- set nx = v.next.name ~ '<br>⚠️ прострочено' ~ (' +' ~ v.next.over_km ~ ' ' ~ v.unit if v.next.over_km else '') -%}
@@ -24,7 +28,8 @@ content: |
     {%- endif -%}
     {%- set ns.rows = ns.rows + ['| ' ~ dot ~ ' | ' ~ veh ~ ' | ' ~ nx ~ ' |'] -%}
   {%- endfor -%}
-  {% if t.overdue or t.soon %}{% if t.overdue %}🔴 **{{ t.overdue }}** протерміновано{% endif %}{% if t.soon %}{% if t.overdue %} &nbsp;·&nbsp; {% endif %}🟡 **{{ t.soon }}** скоро{% endif %}
+  {%- set psum = (t.policy_overdue or 0) + (t.policy_soon or 0) -%}
+  {% if t.overdue or t.soon or psum %}{% if t.overdue %}🔴 **{{ t.overdue }}** протерміновано{% endif %}{% if t.soon %}{% if t.overdue %} &nbsp;·&nbsp; {% endif %}🟡 **{{ t.soon }}** скоро{% endif %}{% if psum %}{% if t.overdue or t.soon %} &nbsp;·&nbsp; {% endif %}🛡️ **{{ psum }}** страхов.{% endif %}
   {% endif %}
   |  | Техніка | Найближче ТО |
   |:--:|:--|:--|

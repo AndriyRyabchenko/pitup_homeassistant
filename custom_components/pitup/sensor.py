@@ -58,9 +58,12 @@ class PitUpOverallSensor(CoordinatorEntity[PitUpCoordinator], SensorEntity):
         data = self.coordinator.data or {}
         totals = data.get("totals", {})
         return {
+            "totals": totals,
             "vehicles_count": totals.get("vehicles"),
             "overdue": totals.get("overdue"),
             "soon": totals.get("soon"),
+            "policy_overdue": totals.get("policy_overdue"),
+            "policy_soon": totals.get("policy_soon"),
             "generated_at": data.get("generated_at"),
             "vehicles": data.get("vehicles", []),
         }
