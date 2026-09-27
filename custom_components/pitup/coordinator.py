@@ -35,7 +35,7 @@ class PitUpCoordinator(DataUpdateCoordinator):
         try:
             async with self._session.get(
                 url,
-                params={"token": self.token},
+                headers={"X-Api-Token": self.token},  # не в URL — URL потрапляють у логи
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
                 if resp.status == 401:

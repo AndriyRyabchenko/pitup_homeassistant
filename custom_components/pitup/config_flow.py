@@ -35,7 +35,7 @@ class PitUpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 async with session.get(
                     f"{DEFAULT_BASE_URL}{SUMMARY_PATH}",
-                    params={"token": token},
+                    headers={"X-Api-Token": token},  # не в URL — URL потрапляють у логи
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as resp:
                     if resp.status == 401:
