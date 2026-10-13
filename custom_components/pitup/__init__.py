@@ -9,6 +9,8 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import CoreState, HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.loader import async_get_integration
 
 from .const import (
     CONF_BASE_URL,
@@ -32,10 +34,6 @@ SET_COUNTER_SCHEMA = vol.Schema(
 
 FRONTEND_PATH = "/pitup_static"
 CARD_JS = f"{FRONTEND_PATH}/pitup.js"
-# Cache-bust: браузер/HA кешують JS за URL, тож при кожній версії міняємо ?v=…
-# (тримати синхронно з manifest.json version).
-_JS_VERSION = "0.7.1"
-CARD_URL = f"{CARD_JS}?v={_JS_VERSION}"
 PANEL_PATH = "pitup"
 
 
@@ -44,6 +42,8 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     data = hass.data.setdefault(DOMAIN, {})
     if data.get("_frontend"):
         return
+    # Cache-bust: браузер/HA кешують JS за URL, тож ?v= - версія з manifest.json.
+    card_url = f"{CARD_JS}?v={(await async_get_integration(hass, DOMAIN)).version}"
 
     www_dir = os.path.join(os.path.dirname(__file__), "www")
     try:  # нове API (HA 2024.7+) з фолбеком на старе
@@ -56,15 +56,15 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         hass.http.register_static_path(FRONTEND_PATH, www_dir, False)
 
     # Авто-підключення JS: картка з’являється у списку «Додати картку».
-    frontend.add_extra_js_url(hass, CARD_URL)
+    frontend.add_extra_js_url(hass, card_url)
     # + як Lovelace-ресурс, щоб дашборд чекав завантаження (без «Custom element doesn't exist»).
-    # Робимо після повного запуску HA — тоді lovelace та його ресурси вже готові.
+    # Робимо після повного запуску HA - тоді lovelace та його ресурси вже готові.
     if hass.state == CoreState.running:
-        await _register_lovelace_resource(hass)
+        await _register_lovelace_resource(hass, card_url)
     else:
         hass.bus.async_listen_once(
             EVENT_HOMEASSISTANT_STARTED,
-            lambda _e: hass.async_create_task(_register_lovelace_resource(hass)),
+            lambda _e: hass.async_create_task(_register_lovelace_resource(hass, card_url)),
         )
 
     # Панель «PitUp» у бічному меню (готовий інформер без налаштування).
@@ -73,7 +73,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
             hass,
             frontend_url_path=PANEL_PATH,
             webcomponent_name="pitup-panel",
-            module_url=CARD_URL,
+            module_url=card_url,
             sidebar_title="PitUp",
             sidebar_icon="mdi:car-wrench",
             require_admin=False,
@@ -86,7 +86,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     data["_frontend"] = True
 
 
-async def _register_lovelace_resource(hass: HomeAssistant) -> None:
+async def _register_lovelace_resource(hass: HomeAssistant, card_url: str) -> None:
     """Додає картку як Lovelace-ресурс (module), щоб дашборд не рендерив її до завантаження."""
     try:
         data = hass.data.get("lovelace")
@@ -94,7 +94,7 @@ async def _register_lovelace_resource(hass: HomeAssistant) -> None:
         if resources is None and isinstance(data, dict):
             resources = data.get("resources")
         if resources is None or getattr(resources, "async_create_item", None) is None:
-            _LOGGER.warning("PitUp: Lovelace resources недоступні (yaml-режим?) — картку треба додати вручну як ресурс %s", CARD_URL)
+            _LOGGER.warning("PitUp: Lovelace resources недоступні (yaml-режим?) - картку треба додати вручну як ресурс %s", card_url)
             return
         try:  # переконатись, що сховище завантажене
             if hasattr(resources, "async_get_info"):
@@ -107,14 +107,14 @@ async def _register_lovelace_resource(hass: HomeAssistant) -> None:
         items = list(resources.async_items()) if hasattr(resources, "async_items") else []
         existing = next((i for i in items if (i.get("url") or "").split("?")[0] == CARD_JS), None)
         if existing:
-            if existing.get("url") != CARD_URL and hasattr(resources, "async_update_item"):
-                await resources.async_update_item(existing["id"], {"res_type": "module", "url": CARD_URL})
-                _LOGGER.info("PitUp: Lovelace-ресурс оновлено → %s", CARD_URL)
+            if existing.get("url") != card_url and hasattr(resources, "async_update_item"):
+                await resources.async_update_item(existing["id"], {"res_type": "module", "url": card_url})
+                _LOGGER.info("PitUp: Lovelace-ресурс оновлено → %s", card_url)
             return
-        await resources.async_create_item({"res_type": "module", "url": CARD_URL})
-        _LOGGER.info("PitUp: Lovelace-ресурс %s зареєстровано", CARD_URL)
+        await resources.async_create_item({"res_type": "module", "url": card_url})
+        _LOGGER.info("PitUp: Lovelace-ресурс %s зареєстровано", card_url)
     except Exception as err:  # noqa: BLE001
-        _LOGGER.warning("PitUp: Lovelace-ресурс не додано (%s) — додай вручну: %s", err, CARD_URL)
+        _LOGGER.warning("PitUp: Lovelace-ресурс не додано (%s) - додай вручну: %s", err, card_url)
 
 
 def _register_services(hass: HomeAssistant) -> None:
@@ -125,13 +125,14 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_set_counter(call: ServiceCall) -> None:
         vehicle_id = int(call.data["vehicle_id"])
         value = round(float(call.data["value"]), 2)
-        for key, coord in hass.data.get(DOMAIN, {}).items():
-            if key == "_frontend" or not isinstance(coord, PitUpCoordinator):
-                continue
-            if any(v.get("id") == vehicle_id for v in (coord.data or {}).get("vehicles", [])):
+        for coord in hass.data.get(DOMAIN, {}).values():
+            if isinstance(coord, PitUpCoordinator) and coord.vehicle(vehicle_id):
                 await coord.async_set_counter(vehicle_id, value)
                 return
-        _LOGGER.warning("PitUp: техніку id=%s не знайдено для set_counter", vehicle_id)
+        # Помилка, а не тихий «успіх»: автоматизація з хибним vehicle_id одразу видна.
+        raise HomeAssistantError(
+            f"PitUp: техніки id={vehicle_id} немає серед вибраної для Home Assistant"
+        )
 
     hass.services.async_register(
         DOMAIN, SERVICE_SET_COUNTER, _handle_set_counter, schema=SET_COUNTER_SCHEMA

@@ -7,24 +7,40 @@
         "data": {
           "token": "API-токен"
         }
+      },
+      "reauth_confirm": {
+        "title": "PitUp: новий токен",
+        "description": "Токен PitUp більше не діє (його перегенерували або акаунт змінився). Згенеруй новий у PitUp → Налаштування → Home Assistant і встав сюди.",
+        "data": {
+          "token": "API-токен"
+        }
       }
     },
     "error": {
       "invalid_auth": "Недійсний токен PitUp.",
-      "cannot_connect": "Не вдалося з'єднатися з PitUp."
+      "cannot_connect": "Не вдалося з'єднатися з PitUp.",
+      "plan_limit": "Інтеграції не входять у ваш тариф PitUp."
     },
     "abort": {
-      "already_configured": "Цей токен уже додано."
+      "already_configured": "Цей токен уже додано.",
+      "reauth_successful": "Токен оновлено."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Сповіщення PitUp",
-        "description": "Нативні пуші в застосунку Home Assistant про нові «скоро/прострочено» (ТО та страховки). Вкажи свій notify-сервіс, напр. mobile_app_твій_телефон. Порожньо — вимкнено.",
+        "description": "Нативні пуші в застосунку Home Assistant про нові «скоро/прострочено» (ТО та страховки). Вкажи свій notify-сервіс, напр. mobile_app_твій_телефон. Порожньо - вимкнено.",
         "data": {
           "notify_service": "Notify-сервіс"
         }
+      }
+    }
+  },
+  "entity": {
+    "number": {
+      "counter": {
+        "name": "Лічильник"
       }
     }
   }

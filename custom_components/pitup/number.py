@@ -6,28 +6,24 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import PitUpCoordinator
+from .entity import PitUpVehicleEntity, track_vehicles
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: PitUpCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [
-        PitUpCounterNumber(coordinator, entry, v["id"])
-        for v in (coordinator.data or {}).get("vehicles", [])
-    ]
-    async_add_entities(entities)
+    track_vehicles(coordinator, entry, lambda ids: async_add_entities(
+        PitUpCounterNumber(coordinator, entry, vid) for vid in ids))
 
 
-class PitUpCounterNumber(CoordinatorEntity[PitUpCoordinator], NumberEntity):
+class PitUpCounterNumber(PitUpVehicleEntity, NumberEntity):
     """Лічильник техніки: пробіг (км) або напрацювання (мотогодини)."""
 
-    _attr_has_entity_name = True
-    _attr_name = "Лічильник"
+    _attr_translation_key = "counter"  # назва - з translations (uk «Лічильник», en «Counter»)
     _attr_mode = NumberMode.BOX
     _attr_icon = "mdi:counter"
     _attr_native_min_value = 0
@@ -37,23 +33,16 @@ class PitUpCounterNumber(CoordinatorEntity[PitUpCoordinator], NumberEntity):
     def __init__(
         self, coordinator: PitUpCoordinator, entry: ConfigEntry, vehicle_id: int
     ) -> None:
-        super().__init__(coordinator)
-        self._vehicle_id = vehicle_id
+        super().__init__(coordinator, vehicle_id)
         self._attr_unique_id = f"{entry.entry_id}_counter_{vehicle_id}"
-        self._attr_native_unit_of_measurement = self._vehicle().get("unit")
+        self._attr_native_unit_of_measurement = self.vehicle.get("unit")
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry.entry_id}_{vehicle_id}")},
         )
 
-    def _vehicle(self) -> dict:
-        for v in (self.coordinator.data or {}).get("vehicles", []):
-            if v.get("id") == self._vehicle_id:
-                return v
-        return {}
-
     @property
     def native_value(self):
-        return self._vehicle().get("mileage")
+        return self.vehicle.get("mileage")
 
     @property
     def extra_state_attributes(self):

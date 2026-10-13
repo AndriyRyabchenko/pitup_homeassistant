@@ -6,6 +6,11 @@
 
 ## Встановлення (HACS)
 
+[![Відкрити ваш Home Assistant і додати цей репозиторій у HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=AndriyRyabchenko&repository=pitup_homeassistant&category=integration)
+
+Кнопка відкриває HACS у вашому Home Assistant з уже підставленим репозиторієм - лишиться
+натиснути **Download** і перезапустити HA. Або вручну:
+
 1. HACS → **Integrations** → меню ⋮ → **Custom repositories**.
 2. Додайте репозиторій `https://github.com/AndriyRyabchenko/pitup_homeassistant`,
    категорія **Integration**.
@@ -20,15 +25,24 @@
 ## Налаштування
 
 1. У PitUp: **Налаштування → Home Assistant → Згенерувати токен**, скопіюйте токен.
-2. У Home Assistant: **Налаштування → Пристрої та служби → Додати інтеграцію → PitUp**.
+2. У Home Assistant: **Налаштування → Пристрої та служби → Додати інтеграцію → PitUp**
+   (або кнопкою нижче).
+
+   [![Відкрити ваш Home Assistant і почати налаштування PitUp.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=pitup)
+
 3. Встав **API-токен** (адресу вводити не треба — вона фіксована `https://pitup.app`).
 
 Створяться сутності:
 
 - `sensor.pitup` — загальний стан парку (`ok` / `soon` / `overdue`), а в атрибутах —
   зведення по всій техніці (`vehicles`, `totals`).
-- `sensor.pitup_<техніка>` — стан кожної техніки з деталями (пробіг/мотогодини, найближче ТО, пункти).
-- `number.<техніка>_лічильник` — лічильник пробігу/мотогодин (можна змінити або писати з автоматизації).
+- `sensor.<техніка>` - стан кожної техніки з деталями (пробіг/мотогодини, найближче ТО, пункти);
+  ім'я сутності HA утворює з назви техніки латиницею (напр. `sensor.volkswagen_touareg_2017`).
+- «Лічильник» кожної техніки (`number.…`, точний ID - у сутностях пристрою) - пробіг/мотогодини
+  (можна змінити або писати з автоматизації).
+
+Нова техніка, вибрана для Home Assistant у PitUp, з'являється сама протягом години, без перезапуску.
+Якщо токен перегенерували, HA покаже «Потрібна повторна автентифікація» - достатньо вставити новий.
 
 > Яку саме техніку віддавати — обирається галками в кабінеті PitUp (профіль → Home Assistant).
 

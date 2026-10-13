@@ -7,14 +7,23 @@
         "data": {
           "token": "API token"
         }
+      },
+      "reauth_confirm": {
+        "title": "PitUp: new token",
+        "description": "The PitUp token no longer works (it was regenerated or the account changed). Generate a new one in PitUp → Settings → Home Assistant and paste it here.",
+        "data": {
+          "token": "API token"
+        }
       }
     },
     "error": {
       "invalid_auth": "Invalid PitUp token.",
-      "cannot_connect": "Could not connect to PitUp."
+      "cannot_connect": "Could not connect to PitUp.",
+      "plan_limit": "Integrations are not included in your PitUp plan."
     },
     "abort": {
-      "already_configured": "This token is already added."
+      "already_configured": "This token is already added.",
+      "reauth_successful": "Token updated."
     }
   },
   "options": {
@@ -25,6 +34,13 @@
         "data": {
           "notify_service": "Notify service"
         }
+      }
+    }
+  },
+  "entity": {
+    "number": {
+      "counter": {
+        "name": "Counter"
       }
     }
   }

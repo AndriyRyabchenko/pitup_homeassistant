@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import aiohttp
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -29,21 +30,28 @@ class PitUpCoordinator(DataUpdateCoordinator):
         self.notify_service = ""  # notify-сервіс для пушів (з опцій)
         self._notified = None  # baseline попереджень (щоб слати лише нові)
         self._session = async_get_clientsession(hass)
+        self._by_id: dict[int, dict] = {}
+
+    def vehicle(self, vehicle_id: int) -> dict | None:
+        """Техніка з останнього зведення (None - її вже немає або доступ знято)."""
+        return self._by_id.get(vehicle_id)
 
     async def _async_update_data(self) -> dict:
         url = f"{self.base_url}{SUMMARY_PATH}"
         try:
             async with self._session.get(
                 url,
-                headers={"X-Api-Token": self.token},  # не в URL — URL потрапляють у логи
+                headers={"X-Api-Token": self.token},  # не в URL - URL потрапляють у логи
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
                 if resp.status == 401:
-                    raise UpdateFailed("Недійсний токен PitUp")
+                    # HA покаже «Потрібна повторна автентифікація» (крок reauth у config_flow)
+                    raise ConfigEntryAuthFailed("Недійсний токен PitUp")
                 resp.raise_for_status()
                 data = await resp.json()
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise UpdateFailed(f"Помилка зв'язку з PitUp: {err}") from err
+        self._by_id = {v.get("id"): v for v in data.get("vehicles", [])}
         await self._maybe_notify(data)
         return data
 
@@ -56,19 +64,19 @@ class PitUpCoordinator(DataUpdateCoordinator):
                 st = it.get("status")
                 if st in ("overdue", "soon"):
                     msgs[f"i|{v.get('id')}|{it.get('name')}|{st}"] = (
-                        f"{title}: {it.get('name')} — "
+                        f"{title}: {it.get('name')} - "
                         + ("прострочено" if st == "overdue" else "скоро")
                     )
             for p in v.get("policies", []):
                 st = p.get("status")
                 if st in ("overdue", "soon"):
                     msgs[f"p|{v.get('id')}|{p.get('kind')}|{st}"] = (
-                        f"{title}: {p.get('kind')} — "
+                        f"{title}: {p.get('kind')} - "
                         + ("прострочено" if st == "overdue"
                            else f"спливає ({p.get('days_left')} дн)")
                     )
         cur = set(msgs)
-        if self._notified is None:  # перший запуск — лише базовий стан, без пушу
+        if self._notified is None:  # перший запуск - лише базовий стан, без пушу
             self._notified = cur
             return
         new = cur - self._notified
@@ -80,20 +88,26 @@ class PitUpCoordinator(DataUpdateCoordinator):
         try:
             await self.hass.services.async_call(
                 "notify", service,
-                {"title": "PitUp — нагадування", "message": "\n".join(lines)},
+                {"title": "PitUp - нагадування", "message": "\n".join(lines)},
                 blocking=False,
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("PitUp: пуш не надіслано (notify.%s): %s", service, err)
 
-    async def async_set_counter(self, vehicle_id: int, value: int) -> None:
+    async def async_set_counter(self, vehicle_id: int, value: float) -> None:
         """Записує лічильник (пробіг/мотогодини) техніки в PitUp і оновлює дані."""
         url = f"{self.base_url}{ODOMETER_PATH}"
-        async with self._session.post(
-            url,
-            headers={"X-Api-Token": self.token},
-            json={"vehicle_id": int(vehicle_id), "value": float(value)},
-            timeout=aiohttp.ClientTimeout(total=20),
-        ) as resp:
-            resp.raise_for_status()
+        try:
+            async with self._session.post(
+                url,
+                headers={"X-Api-Token": self.token},
+                json={"vehicle_id": int(vehicle_id), "value": float(value)},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status >= 400:
+                    # 400 - значення, 403 - тариф / техніка не для HA / лише перегляд, 404 - немає
+                    detail = (await resp.json(content_type=None) or {}).get("detail", "")
+                    raise HomeAssistantError(f"PitUp: HTTP {resp.status} {detail}".strip())
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise HomeAssistantError(f"Помилка зв'язку з PitUp: {err}") from err
         await self.async_request_refresh()

@@ -1,13 +1,21 @@
 {
   "domain": "pitup",
   "name": "PitUp",
-  "after_dependencies": ["lovelace"],
-  "codeowners": ["@AndriyRyabchenko"],
+  "after_dependencies": [
+    "lovelace"
+  ],
+  "codeowners": [
+    "@AndriyRyabchenko"
+  ],
   "config_flow": true,
-  "dependencies": ["frontend", "http", "panel_custom"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom"
+  ],
   "documentation": "https://github.com/AndriyRyabchenko/pitup_homeassistant",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/AndriyRyabchenko/pitup_homeassistant/issues",
   "requirements": [],
-  "version": "0.8.1"
+  "version": "0.9.0"
 }

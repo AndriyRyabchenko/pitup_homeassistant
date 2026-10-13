@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import PitUpCoordinator
+from .entity import PitUpVehicleEntity, track_vehicles
 
 STATUS_ICON = {
     "overdue": "mdi:alert-circle",
@@ -23,10 +24,9 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: PitUpCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[SensorEntity] = [PitUpOverallSensor(coordinator, entry)]
-    for vehicle in (coordinator.data or {}).get("vehicles", []):
-        entities.append(PitUpVehicleSensor(coordinator, entry, vehicle["id"]))
-    async_add_entities(entities)
+    async_add_entities([PitUpOverallSensor(coordinator, entry)])
+    track_vehicles(coordinator, entry, lambda ids: async_add_entities(
+        PitUpVehicleSensor(coordinator, entry, vid) for vid in ids))
 
 
 class PitUpOverallSensor(CoordinatorEntity[PitUpCoordinator], SensorEntity):
@@ -69,34 +69,26 @@ class PitUpOverallSensor(CoordinatorEntity[PitUpCoordinator], SensorEntity):
         }
 
 
-class PitUpVehicleSensor(CoordinatorEntity[PitUpCoordinator], SensorEntity):
+class PitUpVehicleSensor(PitUpVehicleEntity, SensorEntity):
     """Стан однієї техніки: ok / soon / overdue + деталі в атрибутах."""
 
-    _attr_has_entity_name = True
     _attr_name = None  # ім'я = назва пристрою (техніки)
 
     def __init__(
         self, coordinator: PitUpCoordinator, entry: ConfigEntry, vehicle_id: int
     ) -> None:
-        super().__init__(coordinator)
-        self._vehicle_id = vehicle_id
+        super().__init__(coordinator, vehicle_id)
         self._attr_unique_id = f"{entry.entry_id}_vehicle_{vehicle_id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry.entry_id}_{vehicle_id}")},
-            name=self._vehicle().get("title", f"Техніка {vehicle_id}"),
+            name=self.vehicle.get("title", f"Техніка {vehicle_id}"),
             manufacturer="PitUp",
             via_device=(DOMAIN, entry.entry_id),
         )
 
-    def _vehicle(self) -> dict:
-        for v in (self.coordinator.data or {}).get("vehicles", []):
-            if v.get("id") == self._vehicle_id:
-                return v
-        return {}
-
     @property
     def native_value(self):
-        return self._vehicle().get("status")
+        return self.vehicle.get("status")
 
     @property
     def icon(self):
@@ -104,7 +96,7 @@ class PitUpVehicleSensor(CoordinatorEntity[PitUpCoordinator], SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        v = self._vehicle()
+        v = self.vehicle
         nxt = v.get("next") or {}
         return {
             "title": v.get("title"),
