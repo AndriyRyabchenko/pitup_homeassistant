@@ -64,10 +64,13 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     if hass.state == CoreState.running:
         await _register_lovelace_resource(hass, card_url)
     else:
-        hass.bus.async_listen_once(
-            EVENT_HOMEASSISTANT_STARTED,
-            lambda _e: hass.async_create_task(_register_lovelace_resource(hass, card_url)),
-        )
+        # Асинхронний обробник - у циклі подій HA. Звичайна lambda з async_create_task виконувалась
+        # поза ним: новий HA це блокує, і ресурс зі старою версією (?v=) так і не оновлювався -
+        # дашборд тягнув стару картку з кешу браузера.
+        async def _on_started(_event) -> None:
+            await _register_lovelace_resource(hass, card_url)
+
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started)
 
     # Панель «PitUp» у бічному меню (готовий інформер без налаштування).
     try:
