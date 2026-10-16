@@ -96,12 +96,14 @@ class PitUpCoordinator(DataUpdateCoordinator):
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("PitUp: пуш не надіслано (notify.%s): %s", service, err)
 
-    async def async_set_counter(self, vehicle_id: int, value: float) -> None:
+    async def async_set_counter(self, vehicle_id: int, value: float, quiet: bool = False) -> dict:
         """Записує лічильник (пробіг/мотогодини) техніки в PitUp.
 
         Лічильник у PitUp лише зростає: менше значення бекенд ігнорує (`applied: false`) -
         тоді попередження в журнал і одне сповіщення в HA (без винятку, інакше автоматизація
         падала б щоразу). Після запису оновлюємо лише цю техніку, без повного опитування.
+        `quiet` - вбудований підрахунок мотогодин сам переходить на значення з PitUp, без попереджень.
+        Повертає відповідь PitUp (`applied`, `value`).
         """
         url = f"{self.base_url}{ODOMETER_PATH}"
         try:
@@ -120,11 +122,13 @@ class PitUpCoordinator(DataUpdateCoordinator):
         vehicle_id = int(vehicle_id)
         current = body.get("value")
         if body.get("applied") is False:
-            self._warn_not_applied(vehicle_id, float(value), current)
+            if not quiet:
+                self._warn_not_applied(vehicle_id, float(value), current)
         elif vehicle_id in self._not_applied:
             self._not_applied.discard(vehicle_id)
             persistent_notification.async_dismiss(self.hass, self._notification_id(vehicle_id))
         self._apply_counter(vehicle_id, current)
+        return body
 
     @staticmethod
     def _notification_id(vehicle_id: int) -> str:
@@ -165,5 +169,6 @@ class PitUpCoordinator(DataUpdateCoordinator):
         if v is None or value is None:
             return
         v["mileage"] = int(value) if float(value) == int(value) else value
+        v["counter"] = float(value)
         v["mileage_estimated"] = False
         self.async_update_listeners()

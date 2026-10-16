@@ -5,10 +5,12 @@ import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_BASE_URL,
+    CONF_MOTOHOURS,
     CONF_NOTIFY_SERVICE,
     CONF_TOKEN,
     DEFAULT_BASE_URL,
@@ -89,19 +91,39 @@ class PitUpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class PitUpOptionsFlow(config_entries.OptionsFlow):
-    """Опції: notify-сервіс для нативних пушів (ТО/страховки)."""
+    """Опції: notify-сервіс для пушів (ТО/страховки) і вбудований підрахунок мотогодин:
+    для техніки з мотогодинами - сутність «працює» (on/off), порожньо - не рахувати."""
 
     def __init__(self, config_entry) -> None:
         self._entry = config_entry
 
+    def _hour_vehicles(self) -> list[dict]:
+        """Техніка з лічильником у годинах (старий сервер без unit_code - уся техніка)."""
+        from .motohours import TIME_UNITS
+
+        coord = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id)
+        vehicles = ((coord.data or {}).get("vehicles", []) if coord else [])
+        return [v for v in vehicles if v.get("unit_code", TIME_UNITS[0]) in TIME_UNITS]
+
+    @staticmethod
+    def _field(v: dict) -> str:
+        # Поле форми = назва техніки (динамічні поля без перекладу показують сам ключ).
+        return f"{v.get('title') or 'id'} (#{v.get('id')}) - сенсор «працює»"
+
     async def async_step_init(self, user_input=None):
+        vehicles = self._hour_vehicles()
         if user_input is not None:
             svc = (user_input.get(CONF_NOTIFY_SERVICE) or "").strip()
-            return self.async_create_entry(title="", data={CONF_NOTIFY_SERVICE: svc})
+            motohours = {str(v["id"]): user_input[self._field(v)] for v in vehicles
+                         if user_input.get(self._field(v))}
+            return self.async_create_entry(title="", data={CONF_NOTIFY_SERVICE: svc, CONF_MOTOHOURS: motohours})
         cur = self._entry.options.get(CONF_NOTIFY_SERVICE, "")
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {vol.Optional(CONF_NOTIFY_SERVICE, default=cur): str}
-            ),
+        tracked = self._entry.options.get(CONF_MOTOHOURS, {})
+        running = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["binary_sensor", "switch", "input_boolean"])
         )
+        schema = {vol.Optional(CONF_NOTIFY_SERVICE, default=cur): str}
+        for v in vehicles:
+            # suggested_value, а не default: поле можна очистити (вимкнути підрахунок).
+            schema[vol.Optional(self._field(v), description={"suggested_value": tracked.get(str(v["id"]))})] = running
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

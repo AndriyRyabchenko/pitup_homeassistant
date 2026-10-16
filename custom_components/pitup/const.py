@@ -14,3 +14,4 @@ ODOMETER_PATH = "/api/ha/odometer/"
 SERVICE_SET_COUNTER = "set_counter"
 
 CONF_NOTIFY_SERVICE = "notify_service"
+CONF_MOTOHOURS = "motohours"  # {vehicle_id: entity_id сутності «працює»}

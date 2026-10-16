@@ -29,8 +29,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "PitUp notifications",
-        "description": "Native Home Assistant app pushes for new due/overdue items (maintenance and insurance). Enter your notify service, e.g. mobile_app_your_phone. Empty = disabled.",
+        "title": "Notifications and engine hours",
+        "description": "Native push notifications in the Home Assistant app about new \"due soon/overdue\" items (service and insurance): enter your notify service, e.g. mobile_app_your_phone (empty - off).\n\nEngine hours: for equipment counted in engine hours pick a \"running\" entity (on - the equipment runs, e.g. the generator binary_sensor) - PitUp will count the running time itself: the base is the current value in PitUp, it writes every 15 min while running and right after it stops. Empty - not counted. The generator-motohours.yaml package is then not needed (disable it to avoid counting twice).",
         "data": {
           "notify_service": "Notify service"
         }

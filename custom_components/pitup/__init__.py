@@ -14,12 +14,14 @@ from homeassistant.loader import async_get_integration
 
 from .const import (
     CONF_BASE_URL,
+    CONF_MOTOHOURS,
     CONF_NOTIFY_SERVICE,
     CONF_TOKEN,
     DOMAIN,
     SERVICE_SET_COUNTER,
 )
 from .coordinator import PitUpCoordinator
+from .motohours import MotohoursTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,6 +156,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_register_frontend(hass)
     _register_services(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Вбудований підрахунок мотогодин (опції: техніка → сутність «працює»).
+    tracker = MotohoursTracker(hass, coordinator, entry.entry_id, entry.options.get(CONF_MOTOHOURS, {}))
+    await tracker.async_start()
+    entry.async_on_unload(tracker.async_stop)
     return True
 
 
