@@ -45,6 +45,9 @@ class PitUpOverallSensor(CoordinatorEntity[PitUpCoordinator], SensorEntity):
             configuration_url="https://pitup.app",
         )
 
+    # Повний список техніки (з посиланнями на фото) - лише для картки й панелі, не в історію HA.
+    _unrecorded_attributes = frozenset({"vehicles", "totals"})
+
     @property
     def native_value(self):
         return (self.coordinator.data or {}).get("status")
