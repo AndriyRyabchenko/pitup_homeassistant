@@ -125,3 +125,48 @@ async def test_config_flow_creates_entry(hass, aioclient_mock):
     with patch("custom_components.pitup.async_setup_entry", return_value=True):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {"token": " tok "})
     assert result["type"] == "create_entry" and result["data"]["token"] == "tok"
+
+
+def _notifications(hass):
+    from homeassistant.components import persistent_notification
+
+    return persistent_notification._async_get_or_create_notifications(hass)
+
+
+async def test_set_counter_not_applied_warns_once(hass, aioclient_mock, caplog):
+    """Менше значення PitUp ігнорує (лічильник лише зростає): журнал щоразу, сповіщення одне, без винятку."""
+    await _setup(hass, aioclient_mock, _vehicle(1, "Генератор"))
+    aioclient_mock.post(ODOMETER, json={"ok": True, "applied": False, "vehicle_id": 1, "value": 44.27})
+    for _ in range(2):
+        await hass.services.async_call(DOMAIN, "set_counter", {"vehicle_id": 1, "value": 0.14}, blocking=True)
+    await hass.async_block_till_done()
+    warnings = [r for r in caplog.records if r.levelname == "WARNING" and "не застосовано" in r.getMessage()]
+    assert len(warnings) == 2 and "44.27" in warnings[0].getMessage()
+    notes = _notifications(hass)
+    assert list(notes) == ["pitup_counter_not_applied_1"]
+    assert "44.27" in notes["pitup_counter_not_applied_1"]["message"]
+
+
+async def test_set_counter_applied_again_dismisses_notification(hass, aioclient_mock):
+    """Базу виправили - значення знову записується: сповіщення прибирається."""
+    await _setup(hass, aioclient_mock, _vehicle(1, "Генератор"))
+    aioclient_mock.post(ODOMETER, json={"ok": True, "applied": False, "value": 44.27})
+    await hass.services.async_call(DOMAIN, "set_counter", {"vehicle_id": 1, "value": 0.14}, blocking=True)
+    aioclient_mock.clear_requests()
+    aioclient_mock.post(ODOMETER, json={"ok": True, "applied": True, "value": 44.5})
+    await hass.services.async_call(DOMAIN, "set_counter", {"vehicle_id": 1, "value": 44.5}, blocking=True)
+    await hass.async_block_till_done()
+    assert not _notifications(hass)
+
+
+async def test_set_counter_updates_value_without_full_refresh(hass, aioclient_mock):
+    """Після запису - нове значення в сутності лічильника, без повторного GET усієї техніки."""
+    entry = await _setup(hass, aioclient_mock, _vehicle(1, "Генератор"))
+    gets = len([c for c in aioclient_mock.mock_calls if c[0] == "GET"])
+    aioclient_mock.post(ODOMETER, json={"ok": True, "applied": True, "vehicle_id": 1, "value": 44.5})
+    await hass.services.async_call(DOMAIN, "set_counter", {"vehicle_id": 1, "value": 44.5}, blocking=True)
+    await hass.async_block_till_done()
+    assert len([c for c in aioclient_mock.mock_calls if c[0] == "GET"]) == gets
+    counter = next(e.entity_id for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+                   if e.domain == "number")
+    assert float(hass.states.get(counter).state) == 44.5

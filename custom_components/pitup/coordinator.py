@@ -5,6 +5,7 @@ import logging
 from datetime import timedelta
 
 import aiohttp
+from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -31,6 +32,7 @@ class PitUpCoordinator(DataUpdateCoordinator):
         self._notified = None  # baseline попереджень (щоб слати лише нові)
         self._session = async_get_clientsession(hass)
         self._by_id: dict[int, dict] = {}
+        self._not_applied: set[int] = set()  # техніка, про яку вже показано сповіщення
 
     def vehicle(self, vehicle_id: int) -> dict | None:
         """Техніка з останнього зведення (None - її вже немає або доступ знято)."""
@@ -95,7 +97,12 @@ class PitUpCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("PitUp: пуш не надіслано (notify.%s): %s", service, err)
 
     async def async_set_counter(self, vehicle_id: int, value: float) -> None:
-        """Записує лічильник (пробіг/мотогодини) техніки в PitUp і оновлює дані."""
+        """Записує лічильник (пробіг/мотогодини) техніки в PitUp.
+
+        Лічильник у PitUp лише зростає: менше значення бекенд ігнорує (`applied: false`) -
+        тоді попередження в журнал і одне сповіщення в HA (без винятку, інакше автоматизація
+        падала б щоразу). Після запису оновлюємо лише цю техніку, без повного опитування.
+        """
         url = f"{self.base_url}{ODOMETER_PATH}"
         try:
             async with self._session.post(
@@ -104,10 +111,59 @@ class PitUpCoordinator(DataUpdateCoordinator):
                 json={"vehicle_id": int(vehicle_id), "value": float(value)},
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
+                body = await resp.json(content_type=None) or {}
                 if resp.status >= 400:
                     # 400 - значення, 403 - тариф / техніка не для HA / лише перегляд, 404 - немає
-                    detail = (await resp.json(content_type=None) or {}).get("detail", "")
-                    raise HomeAssistantError(f"PitUp: HTTP {resp.status} {detail}".strip())
+                    raise HomeAssistantError(f"PitUp: HTTP {resp.status} {body.get('detail', '')}".strip())
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise HomeAssistantError(f"Помилка зв'язку з PitUp: {err}") from err
-        await self.async_request_refresh()
+        vehicle_id = int(vehicle_id)
+        current = body.get("value")
+        if body.get("applied") is False:
+            self._warn_not_applied(vehicle_id, float(value), current)
+        elif vehicle_id in self._not_applied:
+            self._not_applied.discard(vehicle_id)
+            persistent_notification.async_dismiss(self.hass, self._notification_id(vehicle_id))
+        self._apply_counter(vehicle_id, current)
+
+    @staticmethod
+    def _notification_id(vehicle_id: int) -> str:
+        return f"pitup_counter_not_applied_{vehicle_id}"
+
+    def _warn_not_applied(self, vehicle_id: int, sent: float, current) -> None:
+        """Значення менше за лічильник у PitUp: журнал щоразу, сповіщення в HA - один раз."""
+        v = self._by_id.get(vehicle_id) or {}
+        title = v.get("title") or f"#{vehicle_id}"
+        _LOGGER.warning(
+            "PitUp: значення %s для техніки %s (id %s) не застосовано - у PitUp уже %s "
+            "(лічильник лише зростає). Перевір базу (offset) у сценарії set_counter.",
+            sent, title, vehicle_id, current,
+        )
+        if vehicle_id in self._not_applied:
+            return
+        self._not_applied.add(vehicle_id)
+        persistent_notification.async_create(
+            self.hass,
+            (
+                f"Home Assistant надсилає {sent} для «{title}», а в PitUp уже {current}. "
+                "Лічильник у PitUp лише зростає, тож значення не записано.\n\n"
+                "Якщо рахуєш мотогодини за прикладом generator-motohours.yaml - виправ базу: "
+                f"input_number.generator_hours_offset = {current} - поточне значення "
+                "sensor.generator_motohours."
+            ),
+            title="PitUp: лічильник не оновлено",
+            notification_id=self._notification_id(vehicle_id),
+        )
+
+    def _apply_counter(self, vehicle_id: int, value) -> None:
+        """Нове значення лічильника - у дані цієї техніки й сенсори, без повного опитування.
+
+        Не `async_set_updated_data`: вона переносить наступне планове опитування, і при записах
+        кожні 15 хв повне оновлення (статуси ТО, поліси) не відбулося б ніколи.
+        """
+        v = self._by_id.get(vehicle_id)
+        if v is None or value is None:
+            return
+        v["mileage"] = int(value) if float(value) == int(value) else value
+        v["mileage_estimated"] = False
+        self.async_update_listeners()

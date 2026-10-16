@@ -5,11 +5,18 @@
 #       packages: !include_dir_merge_named includes/packages
 #
 # Поклади цей файл у includes/packages/ (напр. pitup_generator.yaml).
-# Верхній ключ `pitup_generator:` — це ІМʼЯ пакета (не додавай `homeassistant:`/`packages:`).
+# Верхній ключ `pitup_generator:` - це ІМʼЯ пакета (не додавай `homeassistant:`/`packages:`).
 #
 # Заміни:
-#   • binary_sensor.deye_generator — на свій сенсор (on = генератор працює);
-#   • VEHICLE_ID — на id генератора в PitUp (див. URL /garage/<id>/).
+#   - binary_sensor.deye_generator - на свій сенсор (on = генератор працює), у двох місцях;
+#   - VEHICLE_ID - на id генератора в PitUp (див. URL /garage/<id>/).
+#
+# База мотогодин (input_number.generator_hours_offset) - ОБОВʼЯЗКОВО одразу після встановлення:
+#   offset = поточні мотогодини в PitUp (або на лічильнику генератора)
+#            - поточне значення sensor.generator_motohours
+# Напр. у PitUp 44.27, сенсор щойно створений і показує 0.18 → offset = 44.09.
+# Лічильник у PitUp лише зростає: менше значення (offset забули, offset замалий) PitUp ігнорує,
+# інтеграція пише про це попередження в журнал і показує сповіщення в HA.
 
 pitup_generator:
 
@@ -29,26 +36,40 @@ pitup_generator:
       unit_time: h
       method: left
       round: 2
+      # ОБОВʼЯЗКОВО: інтеграл перераховується лише при зміні джерела, а під час роботи
+      # generator_running увесь час = 1 - без цього значення стоїть від запуску до зупинки
+      # (і губиться, якщо HA перезапуститься посеред роботи).
+      max_sub_interval:
+        minutes: 1
 
   input_number:
-    # Одноразово: реальні мотогодини генератора «на момент старту підрахунку»
+    # Одноразово: база мотогодин (див. шапку файлу, як порахувати)
     generator_hours_offset:
-      name: Генератор — базові мотогодини
+      name: Генератор - базові мотогодини
       min: 0
       max: 1000000
-      step: 1
+      step: 0.01
       mode: box
 
   automation:
-    - alias: PitUp — записати мотогодини генератора
+    - alias: PitUp - записати мотогодини генератора
       trigger:
-        - platform: state
-          entity_id: sensor.generator_motohours
+        # Під час роботи - раз на 15 хв (не на кожну зміну сенсора: він тепер оновлюється щохвилини)
         - platform: time_pattern
           minutes: "/15"
+        # Зупинка генератора - фінальне значення сесії (за 30 с інтеграл уже порахував останній відрізок)
+        - platform: state
+          entity_id: binary_sensor.deye_generator
+          to: "off"
+          for:
+            seconds: 30
       condition:
         - condition: template
           value_template: "{{ states('sensor.generator_motohours') not in ['unknown','unavailable'] }}"
+        # Раз на 15 хв - лише поки генератор працює або щойно зупинився (простій нічого не змінює)
+        - condition: template
+          value_template: >
+            {{ trigger.platform == 'state' or is_state('binary_sensor.deye_generator', 'on') }}
       action:
         - service: pitup.set_counter
           data:
