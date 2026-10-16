@@ -217,8 +217,10 @@ class PitUpPanel extends HTMLElement {
 }
 if (!customElements.get("pitup-panel")) customElements.define("pitup-panel", PitUpPanel);
 
+// Скрипт може завантажитись двічі (стара версія у відкритій вкладці + нова після оновлення,
+// ресурс Lovelace і extra_js_url) - у списку «Додати картку» PitUp має бути один.
 window.customCards = window.customCards || [];
-window.customCards.push({
+if (!window.customCards.some(function (c) { return c.type === "pitup-card"; })) window.customCards.push({
   type: "pitup-card",
   name: "PitUp",
   description: "Техніка з PitUp як у застосунку: фото, стан, номер, пробіг, страховка чи найближче ТО.",
