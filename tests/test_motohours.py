@@ -130,3 +130,70 @@ async def test_options_list_only_hour_vehicles(hass, aioclient_mock):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"notify_service": "", gena: GEN})
     assert entry.options["motohours"] == {"1": GEN}
+
+
+async def test_untracked_session_dropped(hass, aioclient_mock, freezer, hass_storage):
+    """Техніку прибрали з відстеження, поки працювала: її сесія не дописує години далі."""
+    hass_storage["pitup.motohours.e1"] = {"version": 1, "key": "pitup.motohours.e1",
+                                          "data": {"5": {"start": dt_util.utcnow().isoformat(), "base": 1.0}}}
+    hass.states.async_set(GEN, "off")
+    aioclient_mock.get(SUMMARY, json={"status": "ok", "totals": {}, "vehicles": [_gen(10.0)]})
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="e1", unique_id="pitup_tok",
+                            data={"base_url": "https://pitup.app", "token": "tok"},
+                            options={"motohours": {"1": GEN}})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    aioclient_mock.post(ODOMETER, json={"ok": True, "applied": True, "value": 1.0})
+    freezer.tick(timedelta(minutes=15))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert _posts(aioclient_mock) == []
+
+
+async def test_entity_not_loaded_at_start_keeps_session(hass, aioclient_mock, freezer):
+    """Після перезапуску HA сенсор ще unavailable - сесія не губиться."""
+    hass.states.async_set(GEN, "off")
+    entry = await _setup(hass, aioclient_mock, _gen(5.0), tracked={"1": GEN})
+    hass.states.async_set(GEN, "on")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=30))
+    hass.states.async_set(GEN, "unavailable")
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    aioclient_mock.post(ODOMETER, json={"ok": True, "applied": True, "value": 6.0})
+    hass.states.async_set(GEN, "on")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=30))
+    hass.states.async_set(GEN, "off")
+    await hass.async_block_till_done()
+    assert _posts(aioclient_mock)[-1] == 6.0
+
+
+async def test_final_value_retried_after_network_error(hass, aioclient_mock, freezer):
+    """Фінальне значення при зупинці не дійшло (мережа) - повтор раз на 15 хв."""
+    import aiohttp
+
+    hass.states.async_set(GEN, "off")
+    await _setup(hass, aioclient_mock, _gen(0.0), tracked={"1": GEN})
+    aioclient_mock.post(ODOMETER, exc=aiohttp.ClientError("offline"))
+    hass.states.async_set(GEN, "on")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=12))
+    hass.states.async_set(GEN, "off")
+    await hass.async_block_till_done()
+    aioclient_mock.clear_requests()
+    aioclient_mock.post(ODOMETER, json={"ok": True, "applied": True, "value": 0.2})
+    freezer.tick(timedelta(minutes=15))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert _posts(aioclient_mock) == [0.2]
+
+
+async def test_options_keep_bindings_of_missing_vehicles(hass, aioclient_mock):
+    """Зберегли опції, коли частини техніки зараз немає в PitUp, - її прив'язки лишаються."""
+    entry = await _setup(hass, aioclient_mock, _gen(1.0), tracked={"1": GEN, "7": "switch.boat"})
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    gena = next(str(k) for k in result["data_schema"].schema if "GENA" in str(k))
+    await hass.config_entries.options.async_configure(result["flow_id"], {"notify_service": "", gena: GEN})
+    assert entry.options["motohours"] == {"1": GEN, "7": "switch.boat"}

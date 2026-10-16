@@ -216,9 +216,10 @@ class PitUpCard extends HTMLElement {
       this._card.appendChild(this._body);
       this.appendChild(this._card);
     }
-    const title = this._config && this._config.title;
-    // Порожній заголовок у налаштуваннях - без заголовка; не задано - «PitUp - техніка».
-    this._card.header = title === "" ? undefined : (title || "PitUp - техніка");
+    const c = this._config || {};
+    // show_title: false - без заголовка (окремий перемикач: порожнє текстове поле форма HA може
+    // не передати зовсім); не задано - «PitUp - техніка».
+    this._card.header = c.show_title === false || c.title === "" ? undefined : (c.title || "PitUp - техніка");
     this._body.style.paddingTop = this._card.header ? "4px" : "12px";
     // hass приходить при зміні будь-якої сутності HA - малюємо лише коли змінився sensor.pitup.
     const st = this._hass && this._hass.states && this._hass.states["sensor.pitup"];
@@ -234,7 +235,8 @@ class PitUpCard extends HTMLElement {
 
 // Візуальний редактор картки (ha-form): техніка, розмір, сортування, що показувати.
 const PITUP_LABELS = {
-  title: "Заголовок (порожньо - без заголовка)",
+  title: "Заголовок (порожньо - «PitUp - техніка»)",
+  show_title: "Показувати заголовок",
   vehicles: "Техніка (нічого не обрано - уся)",
   layout: "Розмір карток",
   sort: "Порядок",
@@ -245,7 +247,7 @@ const PITUP_LABELS = {
   show_status: "Стан",
 };
 const PITUP_DEFAULTS = {
-  layout: "auto", sort: "default", info: "auto", only_attention: false,
+  show_title: true, layout: "auto", sort: "default", info: "auto", only_attention: false,
   show_photo: true, show_plate: true, show_status: true,
 };
 
@@ -265,6 +267,7 @@ class PitUpCardEditor extends HTMLElement {
       return pairs.map(function (p) { return { value: p[0], label: p[1] }; });
     };
     return [
+      { name: "show_title", selector: { boolean: {} } },
       { name: "title", selector: { text: {} } },
       { name: "vehicles", selector: { select: { multiple: true, mode: "list", options: vs.map(function (v) {
         return { value: String(v.id), label: v.title + (v.plate ? " · " + v.plate : "") };
@@ -289,6 +292,16 @@ class PitUpCardEditor extends HTMLElement {
   }
   _render() {
     if (!this._hass || !this._config) return;
+    // hass оновлюється при зміні будь-якої сутності - форму перебудовуємо лише коли змінився
+    // список техніки (чи налаштування).
+    const st = this._hass.states["sensor.pitup"];
+    const key = JSON.stringify(((st && st.attributes.vehicles) || []).map(function (v) { return [v.id, v.title, v.plate]; }));
+    if (this._form && this._key === key && this._shownConfig === this._config) {
+      this._form.hass = this._hass;
+      return;
+    }
+    this._key = key;
+    this._shownConfig = this._config;
     if (!this._form) {
       this._form = document.createElement("ha-form");
       this._form.computeLabel = function (s) { return PITUP_LABELS[s.name] || s.name; };

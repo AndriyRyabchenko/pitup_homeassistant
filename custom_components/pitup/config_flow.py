@@ -114,8 +114,12 @@ class PitUpOptionsFlow(config_entries.OptionsFlow):
         vehicles = self._hour_vehicles()
         if user_input is not None:
             svc = (user_input.get(CONF_NOTIFY_SERVICE) or "").strip()
-            motohours = {str(v["id"]): user_input[self._field(v)] for v in vehicles
-                         if user_input.get(self._field(v))}
+            # Техніка, якої зараз немає в списку (PitUp не відповів, доступ тимчасово знято), -
+            # її прив'язки лишаються як були.
+            shown = {str(v["id"]) for v in vehicles}
+            motohours = {k: e for k, e in self._entry.options.get(CONF_MOTOHOURS, {}).items() if k not in shown}
+            motohours.update({str(v["id"]): user_input[self._field(v)] for v in vehicles
+                              if user_input.get(self._field(v))})
             return self.async_create_entry(title="", data={CONF_NOTIFY_SERVICE: svc, CONF_MOTOHOURS: motohours})
         cur = self._entry.options.get(CONF_NOTIFY_SERVICE, "")
         tracked = self._entry.options.get(CONF_MOTOHOURS, {})

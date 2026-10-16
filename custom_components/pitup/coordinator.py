@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 
 import aiohttp
@@ -138,6 +139,9 @@ class PitUpCoordinator(DataUpdateCoordinator):
         """Значення менше за лічильник у PitUp: журнал щоразу, сповіщення в HA - один раз."""
         v = self._by_id.get(vehicle_id) or {}
         title = v.get("title") or f"#{vehicle_id}"
+        # Сповіщення HA - markdown, а назву спільної техніки міг ввести інший користувач PitUp:
+        # без посилань і картинок з назви.
+        safe_title = re.sub(r"([\\`*_{}\[\]()<>#+!|~])", r"\\\1", title)
         _LOGGER.warning(
             "PitUp: значення %s для техніки %s (id %s) не застосовано - у PitUp уже %s "
             "(лічильник лише зростає). Перевір базу (offset) у сценарії set_counter.",
@@ -149,7 +153,7 @@ class PitUpCoordinator(DataUpdateCoordinator):
         persistent_notification.async_create(
             self.hass,
             (
-                f"Home Assistant надсилає {sent} для «{title}», а в PitUp уже {current}. "
+                f"Home Assistant надсилає {sent} для «{safe_title}», а в PitUp уже {current}. "
                 "Лічильник у PitUp лише зростає, тож значення не записано.\n\n"
                 "Якщо рахуєш мотогодини за прикладом generator-motohours.yaml - виправ базу: "
                 f"input_number.generator_hours_offset = {current} - поточне значення "

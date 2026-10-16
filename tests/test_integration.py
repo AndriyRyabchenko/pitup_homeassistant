@@ -170,3 +170,12 @@ async def test_set_counter_updates_value_without_full_refresh(hass, aioclient_mo
     counter = next(e.entity_id for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
                    if e.domain == "number")
     assert float(hass.states.get(counter).state) == 44.5
+
+
+async def test_not_applied_notification_escapes_markdown(hass, aioclient_mock):
+    """Назву спільної техніки вводить інший користувач: у сповіщенні (markdown) - без посилань."""
+    await _setup(hass, aioclient_mock, _vehicle(1, "[клік](https://evil.example)"))
+    aioclient_mock.post(ODOMETER, json={"ok": True, "applied": False, "value": 10})
+    await hass.services.async_call(DOMAIN, "set_counter", {"vehicle_id": 1, "value": 1}, blocking=True)
+    msg = _notifications(hass)["pitup_counter_not_applied_1"]["message"]
+    assert "](https://" not in msg and "\\[клік\\]" in msg

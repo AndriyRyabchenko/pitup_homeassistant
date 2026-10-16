@@ -35,19 +35,29 @@ class MotohoursTracker:
         self.trackers = {int(vid): ent for vid, ent in trackers.items() if ent}
         self._store = Store(hass, 1, f"{DOMAIN}.motohours.{entry_id}")
         self._sessions: dict[int, dict] = {}  # {vehicle_id: {"start": iso, "base": float}}
+        # Фінальні значення, що не дійшли в PitUp (мережа) - повтор раз на 15 хв: {vehicle_id: value}
+        self._pending: dict[int, float] = {}
         self._unsubs: list = []
 
     async def async_start(self) -> None:
         if not self.trackers:
             return
-        self._sessions = {int(k): v for k, v in ((await self._store.async_load()) or {}).items()}
+        stored = (await self._store.async_load()) or {}
+        if "sessions" not in stored:  # формат 0.11-0.13: лише сесії
+            stored = {"sessions": stored, "pending": {}}
+        # Лише техніка, яку зараз відстежуємо: сесія прибраної з опцій інакше дописувала б години.
+        self._sessions = {int(k): v for k, v in stored["sessions"].items() if int(k) in self.trackers}
+        self._pending = {int(k): v for k, v in stored["pending"].items() if int(k) in self.trackers}
         now = dt_util.utcnow()
         for vid, entity_id in self.trackers.items():
-            running = self._is_on(self.hass.states.get(entity_id))
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                continue  # сутність ще не підвантажилась після старту HA - не зупинка
+            running = self._is_on(state)
             if running and vid not in self._sessions:
                 self._begin(vid, now)
             elif not running and vid in self._sessions:
-                # Зупинилась, поки HA не працював: останнє записане значення вже в PitUp.
+                # Зупинилась, поки HA не працював: час до останнього запису вже в PitUp.
                 self._sessions.pop(vid, None)
         await self._save()
         self._unsubs.append(async_track_state_change_event(
@@ -80,19 +90,21 @@ class MotohoursTracker:
         hours = (now - datetime.fromisoformat(s["start"])).total_seconds() / 3600
         return round(s["base"] + max(hours, 0), 2)
 
+    async def _send(self, vehicle_id: int, value: float) -> dict | None:
+        try:
+            return await self.coordinator.async_set_counter(vehicle_id, value, quiet=True)
+        except HomeAssistantError as err:
+            _LOGGER.warning("PitUp: мотогодини (id %s) не записано: %s", vehicle_id, err)
+            return None
+
     async def _push(self, vehicle_id: int, now: datetime) -> None:
         value = self.value(vehicle_id, now)
         if value is None:
             return
-        try:
-            body = await self.coordinator.async_set_counter(vehicle_id, value, quiet=True)
-        except HomeAssistantError as err:
-            _LOGGER.warning("PitUp: мотогодини (id %s) не записано: %s", vehicle_id, err)
-            return
+        body = await self._send(vehicle_id, value)
         s = self._sessions.get(vehicle_id)
-        if s is None:
+        if body is None or s is None:
             return
-        s["last"] = now.isoformat()
         current = body.get("value")
         if body.get("applied") is False and current is not None:
             # У PitUp більше (змінили вручну) - рахуємо далі від нього, без бази вручну.
@@ -115,14 +127,25 @@ class MotohoursTracker:
             if self._is_on(new) and vid not in self._sessions:
                 self._begin(vid, now)
             elif not self._is_on(new) and vid in self._sessions:
-                await self._push(vid, now)
+                # Сесію закриваємо ДО запиту: увімкнули знову, поки йде запит, - нова сесія.
+                value = self.value(vid, now)
                 self._sessions.pop(vid, None)
+                if value is not None and await self._send(vid, value) is None:
+                    self._pending[vid] = value  # не дійшло - повтор раз на 15 хв
+                else:
+                    self._pending.pop(vid, None)
         await self._save()
 
     async def _on_interval(self, now: datetime) -> None:
+        for vid, value in list(self._pending.items()):
+            if await self._send(vid, value) is not None:
+                self._pending.pop(vid, None)
         for vid in list(self._sessions):
             await self._push(vid, dt_util.utcnow())
         await self._save()
 
     async def _save(self) -> None:
-        await self._store.async_save({str(k): v for k, v in self._sessions.items()})
+        await self._store.async_save({
+            "sessions": {str(k): v for k, v in self._sessions.items()},
+            "pending": {str(k): v for k, v in self._pending.items()},
+        })
