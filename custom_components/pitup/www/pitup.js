@@ -331,8 +331,6 @@ class PitUpCardEditor extends HTMLElement {
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: config }, bubbles: true, composed: true }));
   }
 }
-if (!customElements.get("pitup-card-editor")) customElements.define("pitup-card-editor", PitUpCardEditor);
-if (!customElements.get("pitup-card")) customElements.define("pitup-card", PitUpCard);
 
 class PitUpPanel extends HTMLElement {
   set hass(hass) {
@@ -364,7 +362,33 @@ class PitUpPanel extends HTMLElement {
     this._body.innerHTML = pitupRenderPanel(this._hass);
   }
 }
-if (!customElements.get("pitup-panel")) customElements.define("pitup-panel", PitUpPanel);
+
+// Реєстрація елементів. Фронтенд HA після старту підміняє глобальний реєстр (scoped custom element
+// registry); якщо цей скрипт виконався раніше (порожній кеш браузера - великий бандл HA ще
+// вантажиться), визначення лишаються в старому реєстрі, і дашборд показує «Custom element not
+// found: pitup-card». Тож визначаємо ще раз, доки елементи не видно в поточному реєстрі
+// (HA сам перебудовує картку, щойно елемент з'являється).
+const PITUP_ELEMENTS = [["pitup-card", PitUpCard], ["pitup-card-editor", PitUpCardEditor], ["pitup-panel", PitUpPanel]];
+function pitupDefine() {
+  let all = true;
+  PITUP_ELEMENTS.forEach(function (e) {
+    if (customElements.get(e[0])) return;
+    try {
+      customElements.define(e[0], e[1]);
+    } catch (err) {
+      all = false;  // реєстр ще не готовий - наступна спроба
+    }
+    if (!customElements.get(e[0])) all = false;
+  });
+  return all && !/native code/.test(customElements.define.toString());
+}
+if (!pitupDefine()) {
+  let tries = 0;
+  const timer = setInterval(function () {
+    // Реєстр підмінено й усе видно - готово; без підміни (інший браузер/версія HA) - 30 с і досить.
+    if (pitupDefine() || ++tries >= 300) clearInterval(timer);
+  }, 100);
+}
 
 // Скрипт може завантажитись двічі (стара версія у відкритій вкладці + нова після оновлення,
 // ресурс Lovelace і extra_js_url) - у списку «Додати картку» PitUp має бути один.
